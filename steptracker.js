@@ -183,10 +183,10 @@ var init = () => {
 
 		err ? console.log(err) : console.log(savedDoc);
 	});
-}
+} 
 
 // tell the server what port to listen on
-app.listen(3000, () => {
+app.listen(process.env.PORT, () => {
 	//init();
-	console.log('Listening on localhost:3000')
+	console.log('Listening on port ' + process.env.PORT)
 }); 
