@@ -1,0 +1,13 @@
+.margins {
+	margin: 10px
+} 
+
+.bgbody {
+	background-color: rgb(82, 163, 82);
+}
+
+.bg {
+	border: 1px dotted rgb(75, 75, 75);
+	background-color: rgb(255, 255, 255);
+	border-radius: 10px;
+}
