@@ -10,6 +10,7 @@ const bcrypt = require('bcrypt-nodejs');
 const dotenv = require('dotenv').config();
 const FileStore = require('session-file-store')(session);
 const moment = require('moment');
+const request = require('request');
 
 if (dotenv.error) {
 	throw dotenv.error
@@ -156,8 +157,44 @@ app.get('/steps/all', (req, res) => {
 	}
 })
 
+var retrieveSteps = () => {
+	const bearer = process.env.BEARER;
+
+	var options = {
+		method: 'POST',
+		url: 'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
+		headers:
+		{
+			Authorization: 'Bearer ' + bearer,
+			'Content-Type': 'application/json'
+		},
+		body:
+		{
+			aggregateBy:
+				[{
+					dataTypeName: 'com.google.step_count.delta',
+					dataSourceId: 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps'
+				}],
+			bucketByTime: { durationMillis: 86400000 },
+			startTimeMillis: 1574006475506,
+			endTimeMillis: 1576598475506
+		},
+		json: true
+	};
+
+	request(options, function (error, response, body) {
+		if (error) throw new Error(error);
+
+		console.log(body);
+
+		console.log("done");
+		
+	});
+}
+
 var init = () => {
 
+	retrieveSteps();
 	db.remove({}, { multi: true }, function (err, numRemoved) {
 		console.log("removed: " + numRemoved);
 		
@@ -187,6 +224,6 @@ var init = () => {
 
 // tell the server what port to listen on
 app.listen(process.env.PORT, () => {
-	//init();
+	init();
 	console.log('Listening on port ' + process.env.PORT)
 }); 

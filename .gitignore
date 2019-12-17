@@ -2,3 +2,4 @@
 /.env
 /sessions
 /package-lock.json
+/data/database
