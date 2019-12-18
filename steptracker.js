@@ -11,10 +11,30 @@ const dotenv = require('dotenv').config();
 const FileStore = require('session-file-store')(session);
 const moment = require('moment');
 const request = require('request');
+const { google } = require('googleapis');
 
 if (dotenv.error) {
 	throw dotenv.error
 }
+
+const oauth2Client = new google.auth.OAuth2(
+	process.env.CLIENT_ID,
+	process.env.CLIENT_SECRET,
+	process.env.REDIRECT_URL
+);
+
+const scopes = [
+  'https://www.googleapis.com/auth/fitness.activity.read',
+];
+
+const url = oauth2Client.generateAuthUrl({
+	// 'online' (default) or 'offline' (gets refresh_token)
+	access_type: 'offline',
+
+	// If you only need one scope you can pass it as a string
+	scope: scopes
+});
+
 
 var app = express();
 
@@ -35,7 +55,7 @@ passport.use(new LocalStrategy(
 
 			var user = docs[0]
 			console.log(password + " " + user.password);
-			
+
 			if (email === user.email && bcrypt.compareSync(password, user.password)) {
 				console.log('Local strategy returned true')
 				return done(null, user)
@@ -56,7 +76,7 @@ passport.serializeUser((user, done) => {
 
 passport.deserializeUser((id, done) => {
 	db.find({ _id: id }, (err, docs) => {
-		
+
 		if (err || docs.length === 0) {
 			console.log(err);
 			done(err, false)
@@ -102,6 +122,16 @@ app.get('/', function (req, res) {
 
 app.get('/login', (req, res) => {
 	req.isAuthenticated() ? res.redirect('steps/personal') : res.render('login');
+})
+
+app.get('/callback', (req,res) => {
+	var code = req.query.code
+	console.log(code);
+	
+	oauth2Client.getToken(code).then((tokens) => {
+		console.log(tokens);
+		oauth2Client.setCredentials(tokens);
+	})
 })
 
 app.post('/login', (req, res, next) => {
@@ -151,45 +181,68 @@ app.get('/steps/personal', (req, res) => {
 app.get('/steps/all', (req, res) => {
 	if (req.isAuthenticated()) {
 		req.
-		res.send('you hit the authentication endpoint\n')
+			res.send('you hit the authentication endpoint\n')
 	} else {
 		res.redirect('/login')
 	}
 })
 
+app.get('/authorization-start', (req, res) => {
+	res.render("authorization-start");
+})
+
+
 var retrieveSteps = () => {
-	const bearer = process.env.BEARER;
 
-	var options = {
-		method: 'POST',
-		url: 'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
-		headers:
-		{
-			Authorization: 'Bearer ' + bearer,
-			'Content-Type': 'application/json'
-		},
-		body:
-		{
-			aggregateBy:
-				[{
-					dataTypeName: 'com.google.step_count.delta',
-					dataSourceId: 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps'
-				}],
-			bucketByTime: { durationMillis: 86400000 },
-			startTimeMillis: 1574006475506,
-			endTimeMillis: 1576598475506
-		},
-		json: true
-	};
+	// console.log(fitness.users);
+	const fitness = google.fitness('v1');
 
-	request(options, function (error, response, body) {
-		if (error) throw new Error(error);
-
-		console.log(body);
-
-		console.log("done");
+	fitness.users.dataset.aggregate({
+		aggregateBy:
+			[{
+				dataTypeName: 'com.google.step_count.delta',
+				dataSourceId: 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps'
+			}],
+		bucketByTime: { durationMillis: 86400000 },
+		startTimeMillis: 1574006475506,
+		endTimeMillis: 1576598475506,
+	}).then(res => {
+		console.log(res);
 		
 	});
+	
+	// const bearer = process.env.BEARER;
+
+	// var options = {
+	// 	method: 'POST',
+	// 	url: 'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
+	// 	headers:
+	// 	{
+	// 		Authorization: 'Bearer ' + bearer,
+	// 		'Content-Type': 'application/json'
+	// 	},
+	// 	body:
+		// {
+		// 	aggregateBy:
+		// 		[{
+		// 			dataTypeName: 'com.google.step_count.delta',
+		// 			dataSourceId: 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps'
+		// 		}],
+		// 	bucketByTime: { durationMillis: 86400000 },
+		// 	startTimeMillis: 1574006475506,
+		// 	endTimeMillis: 1576598475506
+		// },
+	// 	json: true
+	// };
+
+	// request(options, function (error, response, body) {
+	// 	if (error) throw new Error(error);
+
+	// 	console.log(body);
+
+	// 	console.log("done");
+
+	// });
 }
 
 var init = () => {
@@ -197,7 +250,7 @@ var init = () => {
 	retrieveSteps();
 	db.remove({}, { multi: true }, function (err, numRemoved) {
 		console.log("removed: " + numRemoved);
-		
+
 	});
 	steps = [
 		{
@@ -220,10 +273,10 @@ var init = () => {
 
 		err ? console.log(err) : console.log(savedDoc);
 	});
-} 
+}
 
 // tell the server what port to listen on
-app.listen(process.env.PORT, () => {
-	init();
+app.listen(process.env.PORT, () => { 
+	//init();
 	console.log('Listening on port ' + process.env.PORT)
 }); 

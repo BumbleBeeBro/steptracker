@@ -1,3 +1,1 @@
-{"name":"Felix","email":"test@test.com","password":"$2a$10$cde5npL1GnJTIFHwss0zG.FO7EbXZsHfntoaSV9hGKksYgt3XyfWC","steps":[{"date":1576603655484,"step":1000},{"date":1574011655484,"step":2000}],"_id":"yTRFeKebZNO27L72"}
-{"$$deleted":true,"_id":"yTRFeKebZNO27L72"}
-{"name":"Felix","email":"test@test.com","password":"$2a$10$TMUaxapCDa7HouWdPytx/uIhk7BlxDLK9Js4JXrr0Yd35mgBnncNi","steps":[{"date":1576603677518,"step":1000},{"date":1574011677518,"step":2000}],"_id":"3VQijkYI5FKOR7D5"}
+{"name":"Felix","email":"test@test.com","password":"$2a$10$mbdsP0VovPnkHj6tUBFLCunw3MBSI76s2WnVovWnCTgK.SlIaAdAS","steps":[{"date":1576665634754,"step":1000},{"date":1574073634754,"step":2000}],"_id":"JLbQWY9pcyXyRr3B"}
