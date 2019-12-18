@@ -37,12 +37,6 @@ class Database {
 				if (err) {
 					reject(err)
 				} else {
-					console.log("in findByEmail");
-					this.db.find({}, function (err, docs) {
-						console.log(docs);
-
-					});
-
 					resolve(doc)
 				}
 			})

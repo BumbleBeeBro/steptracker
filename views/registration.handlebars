@@ -1,0 +1,43 @@
+<h1 class="text-center">
+	Example App: Home
+</h1>
+<form method="POST" action="/register">
+	<div class="form-group">
+		{{!-- Name --}}
+		<label for="name">
+			Name
+		</label>
+		<input type="text" class="form-control" id="name" aria-describedby="nameHelp" name="name" />
+		<small id="nameHelp" class="form-text text-muted">
+			The name will only be displayed to you
+		</small>
+
+		{{!-- Username --}}
+		<label for="username">
+			Username
+		</label>
+		<input type="text" class="form-control" id="username" aria-describedby="usernameHelp" name="username" />
+		<small id="usernameHelp" class="form-text text-muted">
+			The username must be unique
+		</small>
+
+		{{!-- Email address --}}
+		<label for="exampleInputEmail1">
+			Email address
+		</label>
+		<input type="email" class="form-control" id="email" aria-describedby="emailHelp" name="email" />
+		<small id="emailHelp" class="form-text text-muted">
+			We'll never share your email with anyone else.
+		</small>
+
+		{{!-- Password --}}
+		<label for="exampleInputPassword1">
+			Password
+		</label>
+		<input type="password" class="form-control" id="password" name="password" />
+	</div>
+
+	<button type="submit" class="btn btn-primary">
+		Submit
+	</button>
+</form>

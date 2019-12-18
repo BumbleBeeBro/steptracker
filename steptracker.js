@@ -12,6 +12,7 @@ const moment = require('moment');
 const request = require('request');
 const { google } = require('googleapis');
 const databases = require('./components/database')
+const sanitize = require('sanitize').middleware;
 require('log-timestamp');
 
 let db = new databases.Database();
@@ -43,11 +44,7 @@ google.options({
 	auth: oauth2Client
 });
 
-
-
 var app = express();
-
-var steps = [];
 
 // configure passport.js to use the local strategy
 passport.use(new LocalStrategy(
@@ -86,6 +83,8 @@ passport.deserializeUser((id, done) => {
 
 app.engine('handlebars', exphbs());
 app.set('view engine', 'handlebars');
+
+app.use(sanitize);
 
 app.use(express.static('public'));
 
@@ -133,7 +132,11 @@ app.get('/callback', (req, res) => {
 
 app.post('/login', (req, res, next) => {
 
-	db.findByEmail("test@test.com").then(doc => {
+	let email = req.bodyEmail('email');
+
+	console.log(email);
+
+	db.findByEmail(email).then(doc => {
 		console.log(doc);
 	})
 	console.log('Inside POST /login callback')
@@ -149,6 +152,44 @@ app.post('/login', (req, res, next) => {
 			return res.redirect('/steps/personal');
 		})
 	})(req, res, next);
+})
+
+app.get('/register', (req, res) => {
+	res.render('registration');
+});
+
+app.post('/register', async (req, res) => {
+	const name = req.bodyString('name');
+	const username = req.bodyString('username');
+	const email = req.bodyEmail('email');
+	const password = req.bodyString('password');
+
+	console.log({name, username, email, password});
+	
+	const emailexist = await db.findByEmail(email);
+
+	console.log(emailexist);
+	
+	if (emailexist !== null) {
+		res.redirect('/login');
+	}
+
+	doc = {
+		name,
+		username,
+		email,
+		password: bcrypt.hashSync(password),
+		fitTokens: null,
+		refresh: null,
+		lastUpdate: null,
+		steps: [],
+	}
+	db.insertUser(doc, (err, savedDoc) => {
+
+		err ? console.log(err) : console.log(savedDoc);
+	});
+
+	res.send("you are registered")
 })
 
 app.get('/logout', (req, res) => {
@@ -208,6 +249,9 @@ app.get('/steps/all', async (req, res) => {
 		let users = await db.findAll();
 
 		let result = [];
+
+		console.log(users);
+		
 		
 		users.forEach(user => {
 			result.push({ user: (user._id === req.user._id) ? true : false, username: user.username, total: user.steps.map(step => step.step).reduce((acc, cv) => acc + cv)})
