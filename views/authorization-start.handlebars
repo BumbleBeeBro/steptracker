@@ -26,10 +26,10 @@
     // Get API key and client ID from API Console.
     // 'scope' field specifies space-delimited list of access scopes.
     gapi.client.init({
-        'apiKey': 'AIzaSyCaL2D6cGwJN42AHEMDykzinASzIegmypI',
+        {{!-- 'apiKey': 'AIzaSyCaL2D6cGwJN42AHEMDykzinASzIegmypI',
         'discoveryDocs': [discoveryUrl],
         'clientId': '141819215472-bbn81pho8tepdi0qn2jcga2irped621k.apps.googleusercontent.com',
-        'scope': SCOPE
+        'scope': SCOPE --}}
     }).then(function () {
       GoogleAuth = gapi.auth2.getAuthInstance();
 
@@ -57,6 +57,7 @@
     } else {
       // User is not signed in. Start Google auth flow.
       GoogleAuth.signIn();
+	  console.log(GoogleAuth.currentUser.get())
     }
   }
   function revokeAccess() {
