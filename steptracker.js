@@ -1,6 +1,5 @@
 var express = require('express');
 var exphbs = require('express-handlebars');
-var Datastore = require('nedb')
 const uuid = require('uuid/v4')
 const session = require('express-session')
 const bodyParser = require('body-parser');
@@ -12,7 +11,10 @@ const FileStore = require('session-file-store')(session);
 const moment = require('moment');
 const request = require('request');
 const { google } = require('googleapis');
+const databases = require('./components/database')
 require('log-timestamp');
+
+let db = new databases.Database();
 
 if (dotenv.error) {
 	throw dotenv.error
@@ -47,22 +49,12 @@ var app = express();
 
 var steps = [];
 
-db = new Datastore({ filename: './data/database/store.db', autoload: true });
-
 // configure passport.js to use the local strategy
 passport.use(new LocalStrategy(
 	{ usernameField: 'email' },
 	(email, password, done) => {
 		console.log('Inside local strategy callback')
-		db.find({ email: email }, (err, docs) => {
-			if (err || docs.length === 0) {
-				console.log(err);
-				return done(null, false, { message: "user not found" })
-			}
-
-			var user = docs[0]
-			console.log(password + " " + user.password);
-
+		db.findByEmail(email).then(user => {
 			if (email === user.email && bcrypt.compareSync(password, user.password)) {
 				console.log('Local strategy returned true')
 				return done(null, user)
@@ -70,9 +62,9 @@ passport.use(new LocalStrategy(
 			else {
 				return done(null, false, { message: "wrong username or password" })
 			}
-
+		}).catch(err => {
+			return done(null, false, { message: "user not found" })
 		})
-
 	}
 ));
 
@@ -82,15 +74,13 @@ passport.serializeUser((user, done) => {
 });
 
 passport.deserializeUser((id, done) => {
-	db.find({ _id: id }, (err, docs) => {
-
-		if (err || docs.length === 0) {
-			console.log(err);
-			done(err, false)
-		}
-		var user = docs[0]
+	db.findById(id).then(user => {
 		user._id === id ? user : false;
 		done(null, user)
+	}).catch(err => {
+		console.log(err);
+		
+		done(err, false)
 	})
 });
 
@@ -142,6 +132,10 @@ app.get('/callback', (req, res) => {
 })
 
 app.post('/login', (req, res, next) => {
+
+	db.findByEmail("test@test.com").then(doc => {
+		console.log(doc);
+	})
 	console.log('Inside POST /login callback')
 	passport.authenticate('local', (err, user, info) => {
 		if (info) {
@@ -172,30 +166,56 @@ app.get('/privacy', function (req, res) {
 
 app.get('/steps/personal', async (req, res) => {
 
-	await retrieveSteps(req.user);
-
-	db.findOne({_id: req.user._id}, (err, doc) => {
-		console.log(doc);
-		
-	})
-
-	if (req.isAuthenticated()) {
-		steps = req.user.steps.slice();
-		steps.forEach(step => {
-			step.date = moment(step.date).format('L')
-		});
-		res.render('personal', {
-			name: req.user.name,
-			steps: steps,
-		})
-	} else {
+	if (!req.isAuthenticated()) {
 		res.redirect('/login')
 	}
+
+	let user = req.user;
+
+	try {
+		let { stepsToAdd, lastUpdate } = await retrieveSteps(req.user);
+
+		let localUser = await db.updateUserById(req.user._id, {
+			$push: {
+				steps: { $each: stepsToAdd }
+			}, $set: { lastUpdate }
+		});
+
+		localUser ? user = localUser : null;
+
+	} catch (error) {
+		console.log("redirect to google auth" + error);
+		res.redirect('/oauth/start')		
+	}
+
+	steps = user.steps.slice();
+	steps.forEach(step => {
+		step.date = moment(step.date).format('L')
+	});
+
+	res.render('personal', {
+		name: user.name,
+		steps: steps,
+		total: steps.map(step => step.step).reduce((acc, cv) => acc + cv)
+	})
+
+	
 })
 
-app.get('/steps/all', (req, res) => {
+app.get('/steps/all', async (req, res) => {
 	if (req.isAuthenticated()) {
-		res.send('you hit the authentication endpoint\n')
+
+		let users = await db.findAll();
+
+		let result = [];
+		
+		users.forEach(user => {
+			result.push({ user: (user._id === req.user._id) ? true : false, username: user.username, total: user.steps.map(step => step.step).reduce((acc, cv) => acc + cv)})
+		});
+		res.render('all', {
+			name: req.user.name,
+			users: result
+		});
 	} else {
 		res.redirect('/login')
 	}
@@ -213,23 +233,20 @@ app.get('/oauth/redirect', async (req, res) => {
 		console.log(req.user);
 
 		if (tokens.refresh_token) {
-			db.update({ _id: req.user._id }, {
+			await db.updateUserById(req.user._id, {
 				$set: {
 					fitTokens: tokens,
 					fitExpiresIn: tokens.expiry_date,
 				}
-			}, {}, function () {
-				res.send('you did it!')
 			});
 		} else {
-			db.update({ _id: req.user._id }, {
+			await db.updateUserById(req.user._id, {
 				$set: {
 					fitTokens: tokens,
 				}
-			}, {}, function () {
-				res.send('you did it!')
 			});
 		}
+		res.send('you did it!')
 	} else {
 		res.redirect('/login')
 	}
@@ -240,13 +257,12 @@ app.get('/oauth/revoke', (req, res) => {
 	oauth2Client.setCredentials(req.user.fitTokens);
 	oauth2Client.revokeCredentials(function (err, body) {
 		console.log(body);
-		
+
 		res.send("Permissions revoked");
 	});
 })
 
-
-var retrieveSteps = (user) => {
+var retrieveSteps = async (user) => {
 
 	let currentDate = new Date();
 
@@ -266,7 +282,7 @@ var retrieveSteps = (user) => {
 
 	const fitness = google.fitness({ version: 'v1', auth })
 
-	fitness.users.dataset.aggregate({
+	let result = await fitness.users.dataset.aggregate({
 		userId: 'me',
 		requestBody: {
 			aggregateBy:
@@ -278,30 +294,23 @@ var retrieveSteps = (user) => {
 			startTimeMillis,
 			endTimeMillis
 		}
-	}).then(res => {
-		stepsToAdd = [];
+	});
+	stepsToAdd = [];
 
-		res.data.bucket.forEach((day) => {
-			stepsToAdd.push({date: parseInt(day.startTimeMillis), step: day.dataset[0].point[0].value[0].intVal})
-		})
-
-		console.log(stepsToAdd);
-		
-
-		db.update({ _id: user._id }, {
-			$push: {
-				steps: { $each: stepsToAdd }
-			}, $set: {lastUpdate: endTimeMillis}
-		}, {}, function () {
-		});
+	result.data.bucket.forEach((day) => {
+		stepsToAdd.push({ date: parseInt(day.startTimeMillis), step: day.dataset[0].point[0].value[0].intVal })
 	})
+
+	return {stepsToAdd, lastUpdate: endTimeMillis};
+
+
+
 }
 
 var init = () => {
 
-	db.remove({}, { multi: true }, function (err, numRemoved) {
-		console.log("removed: " + numRemoved);
-
+	db.removeAll().then((numRemoved) => {
+		console.log("removed: " + numRemoved)
 	});
 
 	doc = {
@@ -312,9 +321,9 @@ var init = () => {
 		fitTokens: null,
 		refresh: null,
 		lastUpdate: null,
-		steps:  [],
+		steps: [],
 	}
-	db.insert(doc, (err, savedDoc) => {
+	db.insertUser(doc, (err, savedDoc) => {
 
 		err ? console.log(err) : console.log(savedDoc);
 	});
@@ -322,6 +331,6 @@ var init = () => {
 
 // tell the server what port to listen on
 app.listen(process.env.PORT, () => {
-	init(); 
+	//init();
 	console.log('Listening on port ' + process.env.PORT)
 }); 
