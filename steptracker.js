@@ -76,7 +76,7 @@ passport.deserializeUser((id, done) => {
 		done(null, user)
 	}).catch(err => {
 		console.log(err);
-		
+
 		done(err, false)
 	})
 });
@@ -155,7 +155,13 @@ app.post('/login', (req, res, next) => {
 })
 
 app.get('/register', (req, res) => {
-	res.render('registration');
+	if (req.isAuthenticated()) {
+		res.redirect('/steps/personal')
+	} else {
+		res.render('registration');
+
+	}
+
 });
 
 app.post('/register', async (req, res) => {
@@ -164,12 +170,12 @@ app.post('/register', async (req, res) => {
 	const email = req.bodyEmail('email');
 	const password = req.bodyString('password');
 
-	console.log({name, username, email, password});
-	
+	console.log({ name, username, email, password });
+
 	const emailexist = await db.findByEmail(email);
 
 	console.log(emailexist);
-	
+
 	if (emailexist !== null) {
 		res.redirect('/login');
 	}
@@ -189,7 +195,7 @@ app.post('/register', async (req, res) => {
 		err ? console.log(err) : console.log(savedDoc);
 	});
 
-	res.send("you are registered")
+	res.redirect('/login')
 })
 
 app.get('/logout', (req, res) => {
@@ -226,7 +232,7 @@ app.get('/steps/personal', async (req, res) => {
 
 	} catch (error) {
 		console.log("redirect to google auth" + error);
-		res.redirect('/oauth/start')		
+		res.redirect('/oauth/start')
 	}
 
 	steps = user.steps.slice();
@@ -240,7 +246,7 @@ app.get('/steps/personal', async (req, res) => {
 		total: steps.map(step => step.step).reduce((acc, cv) => acc + cv)
 	})
 
-	
+
 })
 
 app.get('/steps/all', async (req, res) => {
@@ -251,10 +257,10 @@ app.get('/steps/all', async (req, res) => {
 		let result = [];
 
 		console.log(users);
-		
-		
+
+
 		users.forEach(user => {
-			result.push({ user: (user._id === req.user._id) ? true : false, username: user.username, total: user.steps.map(step => step.step).reduce((acc, cv) => acc + cv)})
+			result.push({ user: (user._id === req.user._id) ? true : false, username: user.username, total: user.steps.map(step => step.step).reduce((acc, cv) => acc + cv) })
 		});
 		res.render('all', {
 			name: req.user.name,
@@ -266,8 +272,11 @@ app.get('/steps/all', async (req, res) => {
 })
 
 app.get('/oauth/start', (req, res) => {
-	//res.render("authorization-start");
-	res.redirect(url)
+	if (req.isAuthenticated()) {
+		res.redirect(url)
+	} else {
+		res.redirect('/login')
+	}
 })
 
 app.get('/oauth/redirect', async (req, res) => {
@@ -290,7 +299,7 @@ app.get('/oauth/redirect', async (req, res) => {
 				}
 			});
 		}
-		res.send('you did it!')
+		res.redirect('/steps/personal')
 	} else {
 		res.redirect('/login')
 	}
@@ -345,7 +354,7 @@ var retrieveSteps = async (user) => {
 		stepsToAdd.push({ date: parseInt(day.startTimeMillis), step: day.dataset[0].point[0].value[0].intVal })
 	})
 
-	return {stepsToAdd, lastUpdate: endTimeMillis};
+	return { stepsToAdd, lastUpdate: endTimeMillis };
 
 
 
@@ -357,24 +366,23 @@ var init = () => {
 		console.log("removed: " + numRemoved)
 	});
 
-	doc = {
-		name: 'Felix',
-		username: 'BumbleBeeBro',
-		email: 'test@test.com',
-		password: bcrypt.hashSync('password'),
-		fitTokens: null,
-		refresh: null,
-		lastUpdate: null,
-		steps: [],
-	}
-	db.insertUser(doc, (err, savedDoc) => {
+	// doc = {
+	// 	name: 'Felix',
+	// 	username: 'BumbleBeeBro',
+	// 	email: 'test@test.com',
+	// 	password: bcrypt.hashSync('password'),
+	// 	fitTokens: null,
+	// 	refresh: null,
+	// 	lastUpdate: null,
+	// 	steps: [],
+	// }
+	// db.insertUser(doc, (err, savedDoc) => {
 
-		err ? console.log(err) : console.log(savedDoc);
-	});
+	// 	err ? console.log(err) : console.log(savedDoc);
+	// });
 }
 
-// tell the server what port to listen on
 app.listen(process.env.PORT, () => {
-	//init();
+	init();
 	console.log('Listening on port ' + process.env.PORT)
 }); 
