@@ -8,41 +8,21 @@ const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt-nodejs');
 const dotenv = require('dotenv').config();
 const FileStore = require('session-file-store')(session);
-const moment = require('moment');
-const request = require('request');
-const { google } = require('googleapis');
 const databases = require('./components/database')
+const google = require('./components/googleApi');
 const sanitize = require('sanitize').middleware;
+const stepUtility = require('./components/stepUtility')
 require('log-timestamp');
 
-let db = new databases.Database();
+
+
+const db = new databases.Database();
+
+const googleApi = new google.GoogleApi();
 
 if (dotenv.error) {
 	throw dotenv.error
 }
-
-const oauth2Client = new google.auth.OAuth2(
-	process.env.CLIENT_ID,
-	process.env.CLIENT_SECRET,
-	process.env.REDIRECT_URL
-);
-
-const scopes = [
-	'https://www.googleapis.com/auth/fitness.activity.read',
-];
-
-const url = oauth2Client.generateAuthUrl({
-	// 'online' (default) or 'offline' (gets refresh_token)
-	access_type: 'offline',
-
-	// If you only need one scope you can pass it as a string
-	scope: scopes
-});
-
-// set auth as a global default
-google.options({
-	auth: oauth2Client
-});
 
 var app = express();
 
@@ -170,11 +150,7 @@ app.post('/register', async (req, res) => {
 	const email = req.bodyEmail('email');
 	const password = req.bodyString('password');
 
-	console.log({ name, username, email, password });
-
 	const emailexist = await db.findByEmail(email);
-
-	console.log(emailexist);
 
 	if (emailexist !== null) {
 		res.redirect('/login');
@@ -213,40 +189,53 @@ app.get('/privacy', function (req, res) {
 
 app.get('/steps/personal', async (req, res) => {
 
-	if (!req.isAuthenticated()) {
+	if (!req.isAuthenticated()) { 
 		res.redirect('/login')
 	}
 
 	let user = req.user;
 
-	try {
-		let { stepsToAdd, lastUpdate } = await retrieveSteps(req.user);
+	if (user.fitTokens !== null) {
+		let currentDate = new Date();
 
+		currentDate.setHours(0, 0, 0, 0);
+
+		//this morning at 00:00
+		var endTimeMillis = currentDate.getTime();
+
+		//last week
+		var startTimeMillis = currentDate.setDate(currentDate.getDate() - 7)
+
+		if (user.lastUpdate) {
+			var startTimeMillis = user.lastUpdate;
+		}
+
+		let stepsToAdd = await googleApi.getSteps(startTimeMillis, endTimeMillis, user.fitTokens);
+		
 		let localUser = await db.updateUserById(req.user._id, {
 			$push: {
 				steps: { $each: stepsToAdd }
-			}, $set: { lastUpdate }
+			}, $set: { lastUpdate: endTimeMillis }
 		});
 
 		localUser ? user = localUser : null;
 
-	} catch (error) {
-		console.log("redirect to google auth" + error);
+		var steps = user.steps.slice();
+		
+		steps = stepUtility.filterSteps(steps, new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+		steps = stepUtility.sortSteps(steps);
+		steps = await stepUtility.formatDates(steps);
+
+		res.render('personal', {
+			name: user.name,
+			steps: steps,
+			total: steps.map(step => step.step).reduce((acc, cv) => acc + cv, 0)
+		})
+	} else {
+		console.log("redirect to google auth");
+		//res.send('personal failed')
 		res.redirect('/oauth/start')
 	}
-
-	steps = user.steps.slice();
-	steps.forEach(step => {
-		step.date = moment(step.date).format('L')
-	});
-
-	res.render('personal', {
-		name: user.name,
-		steps: steps,
-		total: steps.map(step => step.step).reduce((acc, cv) => acc + cv)
-	})
-
-
 })
 
 app.get('/steps/all', async (req, res) => {
@@ -255,9 +244,6 @@ app.get('/steps/all', async (req, res) => {
 		let users = await db.findAll();
 
 		let result = [];
-
-		console.log(users);
-
 
 		users.forEach(user => {
 			result.push({ user: (user._id === req.user._id) ? true : false, username: user.username, total: user.steps.map(step => step.step).reduce((acc, cv) => acc + cv) })
@@ -273,7 +259,8 @@ app.get('/steps/all', async (req, res) => {
 
 app.get('/oauth/start', (req, res) => {
 	if (req.isAuthenticated()) {
-		res.redirect(url)
+		
+		res.redirect(googleApi.redirectUrl)
 	} else {
 		res.redirect('/login')
 	}
@@ -281,7 +268,8 @@ app.get('/oauth/start', (req, res) => {
 
 app.get('/oauth/redirect', async (req, res) => {
 	if (req.isAuthenticated()) {
-		const { tokens } = await oauth2Client.getToken(req.query.code)
+
+		const { tokens } = await googleApi.getTokens(req.query.code);
 
 		console.log(req.user);
 
@@ -315,74 +303,14 @@ app.get('/oauth/revoke', (req, res) => {
 	});
 })
 
-var retrieveSteps = async (user) => {
-
-	let currentDate = new Date();
-
-	currentDate.setHours(0, 0, 0, 0);
-
-	//this morning at 00:00
-	var endTimeMillis = currentDate.getTime();
-
-	//last week
-	var startTimeMillis = currentDate.setDate(currentDate.getDate() - 7)
-
-	var auth = oauth2Client.setCredentials(user.fitTokens)
-
-	if (user.lastUpdate) {
-		var startTimeMillis = user.lastUpdate;
-	}
-
-	const fitness = google.fitness({ version: 'v1', auth })
-
-	let result = await fitness.users.dataset.aggregate({
-		userId: 'me',
-		requestBody: {
-			aggregateBy:
-				[{
-					dataTypeName: 'com.google.step_count.delta',
-					dataSourceId: 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps'
-				}],
-			bucketByTime: { durationMillis: 86400000 },
-			startTimeMillis,
-			endTimeMillis
-		}
-	});
-	stepsToAdd = [];
-
-	result.data.bucket.forEach((day) => {
-		stepsToAdd.push({ date: parseInt(day.startTimeMillis), step: day.dataset[0].point[0].value[0].intVal })
-	})
-
-	return { stepsToAdd, lastUpdate: endTimeMillis };
-
-
-
-}
-
 var init = () => {
 
 	db.removeAll().then((numRemoved) => {
 		console.log("removed: " + numRemoved)
 	});
-
-	// doc = {
-	// 	name: 'Felix',
-	// 	username: 'BumbleBeeBro',
-	// 	email: 'test@test.com',
-	// 	password: bcrypt.hashSync('password'),
-	// 	fitTokens: null,
-	// 	refresh: null,
-	// 	lastUpdate: null,
-	// 	steps: [],
-	// }
-	// db.insertUser(doc, (err, savedDoc) => {
-
-	// 	err ? console.log(err) : console.log(savedDoc);
-	// });
 }
 
 app.listen(process.env.PORT, () => {
-	init();
+	//init();
 	console.log('Listening on port ' + process.env.PORT)
 }); 
