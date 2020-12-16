@@ -3,3 +3,4 @@
 /sessions
 /package-lock.json
 /data/database
+/data/database/store.db
