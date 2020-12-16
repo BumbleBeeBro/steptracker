@@ -3,11 +3,13 @@
 } 
 
 .bgbody {
-	background-color: rgb(82, 163, 82);
+	background-color: rgb(255, 190, 152);
 }
 
 .bg {
 	border: 1px dotted rgb(75, 75, 75);
 	background-color: rgb(255, 255, 255);
 	border-radius: 10px;
+	min-height: 80vh;
+	margin-top: 5vh;
 }
